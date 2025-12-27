@@ -1,0 +1,59 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9095
+  log_level: info
+
+# 必须添加 memberlist 配置，否则 ring (哈希环) 无法工作
+memberlist:
+  abort_if_cluster_join_fails: false
+  bind_port: 7946
+
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http: 
+          endpoint: 0.0.0.0:4318
+        grpc: 
+          endpoint: 0.0.0.0:4317
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /tmp/tempo/traces
+    wal:
+      path: /tmp/tempo/wal
+
+query_frontend:
+  mcp_server:
+    enabled: true
+  max_outstanding_per_tenant: 128
+
+querier:
+  frontend_worker:
+    frontend_address: tempo:9095
+
+# 修正点 1: metrics_generator 的配置结构
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: inline-test
+  ring:
+    kvstore:
+      store: memberlist
+  # 修正点 2: 处理器产生的临时数据存储路径放在这里
+  storage:
+    path: /tmp/tempo/generator/blocks
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write # 如果不需要发给Prometheus，可以删掉这部分，但建议保留 local-blocks 逻辑
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors:
+        - local-blocks
+        - span-metrics
+        - service-graphs
